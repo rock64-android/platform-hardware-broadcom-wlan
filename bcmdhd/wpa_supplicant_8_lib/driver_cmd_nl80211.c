@@ -24,6 +24,9 @@
 #include "android_drv.h"
 #endif
 
+static char wifi_chip_type[64]={0};
+extern int check_wifi_chip_type_string(char *type);
+
 typedef struct android_wifi_priv_cmd {
 #ifdef BCMDHD_64_BIT_IPC
 	u64 bufaddr;
@@ -119,20 +122,33 @@ int wpa_driver_nl80211_driver_cmd(void *priv, char *cmd, char *buf,
 		priv_cmd.used_len = buf_len;
 		priv_cmd.total_len = buf_len;
 		ifr.ifr_data = &priv_cmd;
-
-		if ((ret = ioctl(drv->global->ioctl_sock, SIOCDEVPRIVATE + 1, &ifr)) < 0) {
-			wpa_printf(MSG_ERROR, "%s: failed to issue private command: %s", __func__, cmd);
-			wpa_driver_send_hang_msg(drv);
+		if(wifi_chip_type[0]==0)
+			check_wifi_chip_type_string(wifi_chip_type);
+		if (!strcmp(wifi_chip_type, "SSV6051") || !strcmp(wifi_chip_type, "ESP8089")){
+				drv_errors = 0;
+				ret = 0;
+				if ((os_strcasecmp(cmd, "LINKSPEED") == 0) ||
+					(os_strcasecmp(cmd, "RSSI") == 0) ||
+					(os_strcasecmp(cmd, "GETBAND") == 0) ||
+					(os_strncasecmp(cmd, "WLS_BATCHING", 12) == 0))
+					ret = strlen(buf);
+				wpa_driver_notify_country_change(drv->ctx, cmd);
+				wpa_printf(MSG_DEBUG, "%s %s len = %d, %zu", __func__, buf, ret, strlen(buf));
 		} else {
-			drv_errors = 0;
-			ret = 0;
-			if ((os_strcasecmp(cmd, "LINKSPEED") == 0) ||
-			    (os_strcasecmp(cmd, "RSSI") == 0) ||
-			    (os_strcasecmp(cmd, "GETBAND") == 0) ||
-			    (os_strncasecmp(cmd, "WLS_BATCHING", 12) == 0))
-				ret = strlen(buf);
-			wpa_driver_notify_country_change(drv->ctx, cmd);
-			wpa_printf(MSG_DEBUG, "%s %s len = %d, %zu", __func__, buf, ret, strlen(buf));
+			if ((ret = ioctl(drv->global->ioctl_sock, SIOCDEVPRIVATE + 1, &ifr)) < 0) {
+				wpa_printf(MSG_ERROR, "%s: failed to issue private command: %s", __func__, cmd);
+				wpa_driver_send_hang_msg(drv);
+			} else {
+				drv_errors = 0;
+				ret = 0;
+				if ((os_strcasecmp(cmd, "LINKSPEED") == 0) ||
+					(os_strcasecmp(cmd, "RSSI") == 0) ||
+					(os_strcasecmp(cmd, "GETBAND") == 0) ||
+					(os_strncasecmp(cmd, "WLS_BATCHING", 12) == 0))
+					ret = strlen(buf);
+				wpa_driver_notify_country_change(drv->ctx, cmd);
+				wpa_printf(MSG_DEBUG, "%s %s len = %d, %zu", __func__, buf, ret, strlen(buf));
+			}
 		}
 	}
 	return ret;
